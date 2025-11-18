@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dream wilders VR School</title>
+    <style>
+        /* Stili Globali */
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; }
+        
+        /* --- DASHBOARD UI (Estetica Migliorata) --- */
+        #dashboard {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(145deg, #0f172a 0%, #000000 100%);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: white; z-index: 20;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .header-info {
+            text-align: center; margin-bottom: 50px;
+        }
+
+        h1 { font-size: 4rem; margin: 0; color: #fff; text-transform: uppercase; letter-spacing: 5px; text-shadow: 0 0 25px rgba(255, 255, 255, 0.5); }
+        h2 { color: #00d2ff; font-size: 1.5rem; margin-top: 10px; letter-spacing: 3px; }
+        .school-address { color: #94a3b8; font-size: 1rem; margin-top: 5px; }
+        
+        /* Contenitore Logo 3D Placeholder */
+        #logo-container {
+            width: 150px; height: 150px; background: rgba(0, 210, 255, 0.1); border-radius: 50%;
+            margin-bottom: 30px; display: flex; align-items: center; justify-content: center;
+            border: 3px solid #00d2ff; box-shadow: 0 0 40px #00d2ff;
+        }
+        #logo-container span { font-size: 4rem; font-weight: 900; color: #00d2ff; text-shadow: 0 0 10px #fff; }
+
+        /* Bottone Aniamto (SUPER COLORATO) */
+        .btn-start {
+            margin-top: 50px; padding: 20px 80px; font-size: 1.6rem; font-weight: 800;
+            background: linear-gradient(45deg, #ff00cc 0%, #00d2ff 100%);
+            border: none; border-radius: 50px; color: white; cursor: pointer;
+            box-shadow: 0 0 50px rgba(255, 0, 204, 0.8), 0 0 20px rgba(0, 210, 255, 0.8);
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+            text-transform: uppercase; letter-spacing: 3px;
+        }
+        .btn-start:hover { transform: scale(1.1); filter: brightness(1.2); }
+        
+        /* Indicatore VR Animato */
+        #vr-status-container {
+            margin-top: 40px; text-align: center;
+        }
+
+        .vr-indicator {
+            padding: 10px 20px; border-radius: 5px; font-family: monospace; font-weight: bold;
+            display: inline-block; animation: pulse 2s infinite;
+            border: 2px solid;
+            transition: all 0.5s;
+        }
+
+        .vr-detected {
+            color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+            border-color: #00ff88;
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        .vr-not-detected {
+            color: #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
+            border-color: #ffaa00;
+            box-shadow: 0 0 10px #ffaa00;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* HUD - Elementi di Gioco */
+        #hud {
+            position: absolute; bottom: 30px; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.8); font-size: 16px; pointer-events: none;
+            text-shadow: 0 2px 4px black; z-index: 5; display: none; font-weight: bold; letter-spacing: 1px;
+        }
+        
+        /* Video nascosto */
+        #video-source { display: none; }
+    </style>
+    <!-- Import Three.js (Module per compatibilità con i nuovi add-ons) --><script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <video id="video-source" loop crossOrigin="anonymous" playsinline muted style="display:none">
+        <!-- Placeholder video, sarà aggiornato in VR --><source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+    </video>
+
+    <!-- DASHBOARD --><div id="dashboard">
+        <div class="header-info">
+            <div id="logo-container">
+                <!-- Logo 3D Placeholder --><span>ITCS</span>
+            </div>
+            <h1>Dream wilders VR School</h1>
+            <h2>ITSC Primo Levi di Seregno</h2>
+            <div class="school-address">Via Appia Antica 68, Seregno</div>
+        </div>
+
+        <button id="btnEnter" class="btn-start">ENTRA NELLA SCUOLA VR</button>
+        
+        <div id="vr-status-container">
+            <div id="vr-status" class="vr-indicator vr-not-detected">
+                Caricamento Moduli VR...
+            </div>
+        </div>
+    </div>
+
+    <div id="hud">Guarda e clicca sugli elementi animati (Logo ITCS, Lavagna, Consolle)</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+
+        // --- DATI UFFICIALI (Quadri Orari & Contenuti Specifici) ---
+        const STUDY_PLANS = {
+            science: {
+                title: "SCIENZE APPLICATE",
+                icon: "💡", // Luce e Scienza
+                color: 0x00ff88,
+                headers: ["Materia", "1^", "2^", "3^", "4^", "5^"],
+                rows: [
+                    ["Italiano", "4", "4", "4", "4", "4"], ["Matematica", "5", "4", "4", "4", "4"], ["Informatica", "2", "2", "2", "2", "2"],
+                    ["Fisica", "2", "2", "3", "3", "3"], ["Scienze naturali", "3", "4", "5", "5", "5"], ["TOTALE ORE", "27", "27", "30", "30", "30"]
+                ],
+                classContent: [
+                    { type: 'text', text: 'Laboratorio di Chimica', x: -8, y: 5, z: -9, size: 0.4, rotationY: Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/eB9S8fF.png', x: -8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: Math.PI/2 }, // Immagine laboratorio
+                    { type: 'text', text: 'Fisica Quantistica', x: 8, y: 5, z: -9, size: 0.4, rotationY: -Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/gK9L7Jk.png', x: 8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: -Math.PI/2 }  // Immagine formule
+                ]
+            },
+            cat: {
+                title: "COSTRUZIONI AMBIENTE TERRITORIO",
+                icon: "🏗️", // Edilizia/Geometria
+                color: 0xffaa00,
+                headers: ["Materia", "1^", "2^", "3^", "4^", "5^"],
+                rows: [
+                    ["Italiano", "4", "4", "4", "4", "4"], ["Matematica", "4", "4", "3", "3", "3"], ["Progettazione", "-", "-", "7", "6", "7"],
+                    ["Topografia", "-", "-", "4", "4", "4"], ["Gestione Cantiere", "-", "-", "2", "2", "2"], ["TOTALE ORE", "33", "33", "32", "32", "32"]
+                ],
+                classContent: [
+                    { type: 'text', text: 'Progettazione Edilizia', x: -8, y: 5, z: -9, size: 0.4, rotationY: Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/f0B7y0P.png', x: -8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: Math.PI/2 }, // Immagine progetto architettonico
+                    { type: 'text', text: 'Rilievo Topografico', x: 8, y: 5, z: -9, size: 0.4, rotationY: -Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/D4s2l3Z.png', x: 8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: -Math.PI/2 } // Immagine topografia
+                ]
+            },
+            moda: {
+                title: "SISTEMA MODA",
+                icon: "👗", // Moda/Abbigliamento
+                color: 0xff00cc,
+                headers: ["Materia", "1^", "2^", "3^", "4^", "5^"],
+                rows: [
+                    ["Italiano", "4", "4", "4", "4", "4"], ["Ideaz. Progettaz.", "-", "-", "6", "6", "6"], ["Chimica Appl. Nob.", "-", "-", "3", "3", "3"],
+                    ["Ec. Marketing Moda", "-", "-", "2", "3", "3"], ["Tecn. Materiali Proc.", "-", "-", "5", "4", "5"], ["TOTALE ORE", "33", "33", "32", "32", "32"]
+                ],
+                classContent: [
+                    { type: 'text', text: 'Fashion Design & Trends', x: -8, y: 5, z: -9, size: 0.4, rotationY: Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/H7J2T3T.png', x: -8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: Math.PI/2 }, // Immagine schizzo moda
+                    { type: 'text', text: 'Sfilate & Marketing', x: 8, y: 5, z: -9, size: 0.4, rotationY: -Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/y3F7p7p.png', x: 8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: -Math.PI/2 }  // Immagine passerella
+                ]
+            },
+            rim: {
+                title: "RELAZIONI INTERNAZIONALI",
+                icon: "🌐", // Mondo/Globalizzazione
+                color: 0x0088ff,
+                headers: ["Materia", "1^", "2^", "3^", "4^", "5^"],
+                rows: [
+                    ["Italiano", "4", "4", "4", "4", "4"], ["Inglese/Lingue", "6", "6", "9", "9", "9"], ["Diritto", "2", "2", "2", "2", "2"],
+                    ["Ec. Az. Geo-pol.", "-", "-", "5", "5", "6"], ["Relazioni Int.", "-", "-", "2", "2", "3"], ["TOTALE ORE", "32", "32", "32", "32", "32"]
+                ],
+                classContent: [
+                    { type: 'text', text: 'Diplomazia Globale', x: -8, y: 5, z: -9, size: 0.4, rotationY: Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/uS8xY8Y.png', x: -8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: Math.PI/2 }, // Immagine bandiere
+                    { type: 'text', text: 'Economia Internazionale', x: 8, y: 5, z: -9, size: 0.4, rotationY: -Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/t3F4x4X.png', x: 8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: -Math.PI/2 }  // Immagine grafici mondo
+                ]
+            },
+            logistica: {
+                title: "LOGISTICA QUADRIENNALE",
+                icon: "🚢", // Navi/Trasporti
+                color: 0xffff00,
+                headers: ["Materia", "1^", "2^", "3^", "4^"],
+                rows: [
+                    ["Italiano", "4", "5", "5", "5"], ["Inglese", "4", "3", "4", "4"], ["Matematica", "5", "4", "5", "5"],
+                    ["Scienza Navigaz.", "-", "2", "2", "3"], ["Logistica", "-", "3", "6", "6"], ["TOTALE ORE", "35", "35", "35", "35"]
+                ],
+                classContent: [
+                    { type: 'text', text: 'Gestione della Supply Chain', x: -8, y: 5, z: -9, size: 0.4, rotationY: Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/m2N0P0N.png', x: -8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: Math.PI/2 }, // Immagine magazzino
+                    { type: 'text', text: 'Trasporti Intermodali', x: 8, y: 5, z: -9, size: 0.4, rotationY: -Math.PI/2 },
+                    { type: 'plane', texture: 'https://i.imgur.com/j8K9L9L.png', x: 8.9, y: 3.5, z: -5, width: 3, height: 2, rotationY: -Math.PI/2 }  // Immagine container nave
+                ]
+            }
+        };
+
+        // --- CONFIG GLOBALE ---
+        const PRINCIPAL_MSG = "Benvenuti nella vostra nuova classe virtuale! Esplorate i cartelloni e interagite con i contenuti. Cliccate sul logo olografico ITCS per tornare all'inizio.";
+        const FOUNDER_MSG = "Questo ambiente virtuale è stato creato dai nostri migliori programmatori. Speriamo vi piaccia!";
+        const VIDEO_URLS = [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", 
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
+        ];
+
+        // --- VARIABILI ---
+        let scene, camera, renderer, controls, raycaster;
+        const pointer = new THREE.Vector2();
+        let interactiveObjects = [];
+        let crowd = []; // Per gli studenti animati nella lobby
+        let seatedStudents = []; // Per gli studenti seduti in classe
+        let worldGroup = new THREE.Group();
+        let loadedFont = null;
+        let videoEl, videoTexture;
+        let clock = new THREE.Clock();
+        let isSpeaking = false;
+        let stars, shootingStar;
+        let currentThemeColor = 0x00d2ff;
+        let logo3D; // Il logo ITCS principale
+        const textureLoader = new THREE.TextureLoader();
+
+        init();
+        checkVR();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000); // Inizialmente nero, poi dinamico
+            scene.fog = new THREE.FogExp2(0x000000, 0.02); // Nebbia per profondità
+            scene.add(worldGroup);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.6, 0); // Altezza occhio
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true; // Abilita WebXR per VR
+            document.body.appendChild(renderer.domElement);
+            document.body.appendChild(VRButton.createButton(renderer)); // Bottone VR
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 1.6, -2); // Guarda leggermente avanti
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.update();
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // Luce ambientale debole
+            scene.add(ambientLight);
+
+            raycaster = new THREE.Raycaster();
+            videoEl = document.getElementById('video-source');
+            videoTexture = new THREE.VideoTexture(videoEl);
+
+            const loader = new FontLoader();
+            loader.load('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
+                loadedFont = font;
+                logo3D = createITCSLogo3D(0xffffff); // Logo 3D
+                logo3D.userData = { clickable: true, action: buildLobby, type: 'logo' };
+                interactiveObjects.push(logo3D);
+                // Avvia l'esperienza dopo che il font è caricato per evitare testi mancanti
+                document.getElementById('btnEnter').addEventListener('click', startExperience);
+            });
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('click', onClick);
+            renderer.xr.addEventListener('select', onSelectVR); // Interazione VR
+            
+            renderer.setAnimationLoop(render); // Loop di animazione
+        }
+
+        // Verifica supporto VR
+        function checkVR() {
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    const statusDiv = document.getElementById('vr-status');
+                    statusDiv.innerText = supported ? "VISORE VR RILEVATO: PRONTO!" : "VISORE NON RILEVATO: MODALITÀ DESKTOP";
+                    if (supported) {
+                        statusDiv.classList.add('vr-detected');
+                        statusDiv.classList.remove('vr-not-detected');
+                    }
+                });
+            }
+        }
+
+        // Avvia l'esperienza VR/3D
+        function startExperience() {
+            if(window.speechSynthesis) window.speechSynthesis.cancel();
+            const dash = document.getElementById('dashboard');
+            dash.style.opacity = 0;
+            setTimeout(() => {
+                dash.style.display = 'none';
+                document.getElementById('hud').style.display = 'block';
+                buildLobby(); // Costruisci la lobby iniziale
+            }, 800);
+        }
+
+        // Pulisce il mondo virtuale per la nuova scena
+        function clearWorld() {
+            while(worldGroup.children.length > 0){ worldGroup.remove(worldGroup.children[0]); }
+            interactiveObjects = [];
+            crowd = [];
+            seatedStudents = [];
+            videoEl.pause();
+            window.speechSynthesis.cancel();
+            if(stars) scene.remove(stars);
+            if(shootingStar) scene.remove(shootingStar);
+        }
+
+        // --- LOBBY (Punti di ingresso) ---
+        function buildLobby() {
+            clearWorld();
+            currentThemeColor = 0x00d2ff; // Colore base per la lobby
+            
+            // Sfondo dinamico, non più nero
+            scene.background = new THREE.Color(0x1a2b3c); // Un blu scuro vivace per la lobby
+            scene.fog.color.setHex(0x1a2b3c);
+
+            // Cielo Stellato (Base)
+            createStarrySky(0xaaaaaa);
+            
+            const floor = new THREE.GridHelper(30, 30, 0x00d2ff, 0x111111); // Griglia per il pavimento
+            floor.position.y = 0.05;
+            worldGroup.add(floor);
+            
+            createText("HALL DI ORIENTAMENTO", 0, 5, -8, 0.8, 0xffffff);
+            createText("Scegli la tua Area di Specializzazione. Clicca sul Logo ITCS per istruzioni.", 0, 4, -8, 0.35, 0x888888);
+
+            // Logo ITCS 3D al centro come punto di interazione
+            logo3D.position.set(0, 1.5, 0);
+            logo3D.scale.set(1.5, 1.5, 1.5);
+            worldGroup.add(logo3D);
+            interactiveObjects.push(logo3D);
+
+            const portalsData = Object.keys(STUDY_PLANS).map(key => ({
+                id: key,
+                label: STUDY_PLANS[key].title,
+                icon: STUDY_PLANS[key].icon,
+                col: STUDY_PLANS[key].color
+            }));
+
+            portalsData.forEach((p, i) => {
+                const angle = (i / portalsData.length) * Math.PI * 2;
+                const r = 6;
+                const x = Math.sin(angle) * r;
+                const z = Math.cos(angle) * r;
+                createPortal(p.label, p.icon, x, 1.5, z, p.col, () => buildGallery(p.id));
+            });
+
+            createCrowd(10, 0x555555); // Studenti stilizzati nella lobby
+        }
+
+        // --- GALLERIA TEMATICA (CLASSE VR) ---
+        function buildGallery(type) {
+            clearWorld(); // Pulisce completamente la lobby
+            const plan = STUDY_PLANS[type];
+            currentThemeColor = plan.color;
+            
+            // Sfondo dinamico basato sul colore del tema della classe
+            scene.background = new THREE.Color(currentThemeColor).lerp(new THREE.Color(0x0a0a1a), 0.5); 
+            scene.fog.color.copy(scene.background);
+            
+            // Cielo Stellato con Colore Tema (visibile attraverso le finestre)
+            createStarrySky(plan.color);
+            createShootingStar(plan.color);
+
+            // --- AMBIENTE CLASSE: Pavimento, Soffitto e Pareti Dettagliate ---
+            const roomWidth = 20;
+            const roomDepth = 30;
+            const roomHeight = 8;
+            const wallThickness = 0.1;
+
+            // Pavimento (Texture Legno/Moderna)
+            const floorTexture = textureLoader.load('https://i.imgur.com/gK9L7Jk.png'); // Esempio di texture geometrica
+            floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping;
+            floorTexture.repeat.set(5, 8);
+            const floorMat = new THREE.MeshStandardMaterial({map: floorTexture, color: 0x4a4a4a, roughness: 0.7, metalness: 0.1});
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), floorMat);
+            floor.rotation.x = -Math.PI/2;
+            floor.position.z = -roomDepth/2;
+            worldGroup.add(floor);
+            
+            // Soffitto (Pannelli luminosi)
+            const ceilingTexture = textureLoader.load('https://i.imgur.com/x0R1Z1Z.png'); // Esempio di texture con forme geometriche
+            ceilingTexture.wrapS = ceilingTexture.wrapT = THREE.RepeatWrapping;
+            ceilingTexture.repeat.set(5, 8);
+            const ceilingMat = new THREE.MeshStandardMaterial({map: ceilingTexture, color: 0xcccccc, emissive: 0xcccccc, emissiveIntensity: 0.3, roughness: 0.3});
+            const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomDepth), ceilingMat);
+            ceiling.rotation.x = Math.PI/2;
+            ceiling.position.y = roomHeight;
+            ceiling.position.z = -roomDepth/2;
+            worldGroup.add(ceiling);
+
+            // Pareti Solide e Colorate
+            const wallColor = new THREE.Color(currentThemeColor).lerp(new THREE.Color(0x333333), 0.7); // Un po' più scuro
+            const wallMat = new THREE.MeshStandardMaterial({color: wallColor, roughness: 0.5, metalness: 0.1});
+
+            // Parete Frontale (con lavagna video)
+            const frontWall = new THREE.Mesh(new THREE.BoxGeometry(roomWidth, roomHeight, wallThickness), wallMat);
+            frontWall.position.set(0, roomHeight/2, -roomDepth);
+            worldGroup.add(frontWall);
+
+            // Parete Posteriore
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomWidth, roomHeight, wallThickness), wallMat);
+            backWall.position.set(0, roomHeight/2, 0);
+            worldGroup.add(backWall);
+
+            // Parete Sinistra (con finestra/cartelloni)
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, roomHeight, roomDepth), wallMat);
+            leftWall.position.set(-roomWidth/2, roomHeight/2, -roomDepth/2);
+            worldGroup.add(leftWall);
+
+            // Parete Destra (con finestra/cartelloni)
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, roomHeight, roomDepth), wallMat);
+            rightWall.position.set(roomWidth/2, roomHeight/2, -roomDepth/2);
+            worldGroup.add(rightWall);
+
+            // --- Finestre Stilizzate per il Cielo Stellato ---
+            const windowGeo = new THREE.PlaneGeometry(6, 4);
+            const windowMat = new THREE.MeshBasicMaterial({ color: 0x0a0a2a, transparent: true, opacity: 0.2, side: THREE.DoubleSide }); // Scuro, ma lascia intravedere
+            
+            const windowL = new THREE.Mesh(windowGeo, windowMat);
+            windowL.position.set(-roomWidth/2 + wallThickness, roomHeight/2 + 0.5, -roomDepth/2 - 5);
+            windowL.rotation.y = Math.PI/2;
+            worldGroup.add(windowL);
+
+            const windowR = new THREE.Mesh(windowGeo, windowMat);
+            windowR.position.set(roomWidth/2 - wallThickness, roomHeight/2 + 0.5, -roomDepth/2 - 5);
+            windowR.rotation.y = -Math.PI/2;
+            worldGroup.add(windowR);
+
+            // --- AMBIENTE CLASSE: Banchi con Alunni Seduti ---
+            const deskColor = 0x6b4423; // Marrone legno
+            const seatColor = 0x4a2c1d; // Marrone più scuro
+            
+            // Corridoio Centrale
+            for(let i=0; i<4; i++) { // Meno banchi per più spazio
+                const zPos = -5 - i*4;
+                createDesk(-4, zPos, deskColor, seatColor, true); // Banco con alunno
+                createDesk(4, zPos, deskColor, seatColor, true); // Banco con alunno
+            }
+
+            // --- Cattedra e Personaggi ---
+            createCattedra(0, 0, -roomDepth + 2, 0x333333);
+            
+            // 1. Dirigente Scolastico (alla Cattedra)
+            const preside = createPrincipal(-1.5, 0, -roomDepth + 1.5, currentThemeColor);
+            preside.userData.action = () => speak(PRINCIPAL_MSG, preside.children[2]);
+            interactiveObjects.push(preside.children[2]);
+            
+            // 2. Docenti del Corso (Accanto alla cattedra)
+            createTeacher(1.5, 0, -roomDepth + 1.5, currentThemeColor);
+
+            // --- Contenuti Interattivi e Personalizzati ---
+            
+            // Logo ITCS 3D (Olografico) - Più piccolo e sul lato
+            const logoInstance = createITCSLogo3D(currentThemeColor);
+            logoInstance.position.set(roomWidth/2 - wallThickness - 1.5, 2, -roomDepth/2 + 8);
+            logoInstance.scale.set(0.5, 0.5, 0.5);
+            logoInstance.rotation.y = -Math.PI/4;
+            logoInstance.userData = { clickable: true, action: buildLobby, type: 'logo' };
+            worldGroup.add(logoInstance);
+            interactiveObjects.push(logoInstance);
+            
+            // Lavagna Luminosa Centrale (Video/Quadro Orario)
+            const videoMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 6), new THREE.MeshBasicMaterial({map: videoTexture}));
+            videoMesh.position.set(0, roomHeight/2 + 1, -roomDepth + wallThickness + 0.1);
+            worldGroup.add(videoMesh);
+
+            // Tabellone Orario Dettagliato (Accanto alla lavagna)
+            const tableTexture = createTableTexture(plan);
+            const board = new THREE.Mesh(new THREE.PlaneGeometry(5, 4), new THREE.MeshBasicMaterial({map: tableTexture, transparent: true}));
+            board.position.set(roomWidth/2 - 2.5, roomHeight/2 + 1.5, -roomDepth + wallThickness + 0.1);
+            board.rotation.y = -Math.PI / 8; // Leggermente angolato
+            worldGroup.add(board);
+            
+            // Titolo corso sopra la lavagna
+            createText(plan.title, 0, roomHeight - 1, -roomDepth + wallThickness + 0.1, 0.6, 0xffffff);
+            
+            // Pulsanti ai LATI (Console)
+            const consoleZ = -roomDepth + 5;
+            // Sinistra (Indietro)
+            const consoleL = createConsole(currentThemeColor);
+            consoleL.position.set(-roomWidth/2 + wallThickness + 1, 1, consoleZ);
+            consoleL.rotation.y = Math.PI/4;
+            worldGroup.add(consoleL);
+            createButton("HOME (MENU PRINCIPALE)", 0, 0.1, 0, 0xff0000, buildLobby, consoleL);
+
+            // Destra (Azione/Video Playback)
+            const consoleR = createConsole(currentThemeColor);
+            consoleR.position.set(roomWidth/2 - wallThickness - 1, 1, consoleZ);
+            consoleR.rotation.y = -Math.PI/4;
+            worldGroup.add(consoleR);
+            createButton("AVVIA/STOP VIDEO CORSO", 0, 0.1, 0, 0x00ff00, () => toggleVideo(type), consoleR);
+
+            // --- Contenuti Specifici per la Classe (Cartelloni Tematici) ---
+            plan.classContent.forEach(content => {
+                if (content.type === 'text') {
+                    createText(content.text, content.x, content.y, content.z, content.size, 0xffffff, content.rotationY);
+                } else if (content.type === 'plane') {
+                    const texture = textureLoader.load(content.texture);
+                    const plane = new THREE.Mesh(
+                        new THREE.PlaneGeometry(content.width, content.height),
+                        new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
+                    );
+                    plane.position.set(content.x, content.y, content.z);
+                    plane.rotation.y = content.rotationY;
+                    worldGroup.add(plane);
+                }
+            });
+        }
+
+        // --- CREAZIONE ELEMENTI 3D DETTAGLIATI ---
+
+        function createITCSLogo3D(color) {
+            const logoGroup = new THREE.Group();
+            
+            // Forma base (Un cubo centrale con bordi smussati)
+            const baseGeo = new THREE.BoxGeometry(1, 1, 0.2);
+            const baseMat = new THREE.MeshBasicMaterial({ color: color, wireframe: false });
+            const base = new THREE.Mesh(baseGeo, baseMat);
+            logoGroup.add(base);
+
+            // Struttura a griglia animata (ologramma)
+            const gridMat = new THREE.LineBasicMaterial({ color: color, linewidth: 2, opacity: 0.5, transparent: true });
+            const gridGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+            const grid = new THREE.LineSegments(new THREE.WireframeGeometry(gridGeo), gridMat);
+            grid.userData = { scan: true, rotationSpeed: 0.015 };
+            logoGroup.add(grid);
+            
+            // Testo ITCS
+            if(loadedFont) {
+                const textGeo = new TextGeometry('ITCS', {font: loadedFont, size: 0.25, height: 0.05});
+                textGeo.center();
+                const textMesh = new THREE.Mesh(textGeo, new THREE.MeshBasicMaterial({color: 0xffffff, side: THREE.DoubleSide}));
+                textMesh.position.z = 0.12;
+                logoGroup.add(textMesh);
+            }
+
+            return logoGroup;
+        }
+
+        function createDesk(x, z, deskColor, seatColor, withStudent = false) {
+            const group = new THREE.Group();
+            
+            // Piano del Banco
+            const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 1), new THREE.MeshStandardMaterial({color: deskColor, roughness: 0.5}));
+            top.position.y = 1;
+            group.add(top);
+            
+            // Gambe (Tubo metallico stilizzato)
+            const legMat = new THREE.MeshStandardMaterial({color: 0xaaaaaa, metalness: 0.9, roughness: 0.2});
+            const leg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1, 8), legMat);
+            leg1.position.set(-0.6, 0.5, 0.4);
+            const leg2 = leg1.clone();
+            leg2.position.set(0.6, 0.5, 0.4);
+            const leg3 = leg1.clone();
+            leg3.position.set(-0.6, 0.5, -0.4);
+            const leg4 = leg1.clone();
+            leg4.position.set(0.6, 0.5, -0.4);
+            group.add(leg1, leg2, leg3, leg4);
+
+            // Sedia/Panca
+            const seat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.5), new THREE.MeshStandardMaterial({color: seatColor, roughness: 0.5}));
+            seat.position.set(0, 0.4, 1.2);
+            group.add(seat);
+
+            group.position.set(x, 0, z);
+            group.rotation.y = x > 0 ? Math.PI : 0; // Se a destra, ruota
+            worldGroup.add(group);
+
+            if (withStudent) {
+                const student = createSeatedStudent(seatColor);
+                student.position.set(x, 0, z + (x > 0 ? 1.2 : -1.2)); // Posiziona davanti o dietro il banco
+                student.rotation.y = x > 0 ? Math.PI : 0; // Ruota verso la cattedra
+                worldGroup.add(student);
+                seatedStudents.push(student);
+            }
+        }
+
+        function createSeatedStudent(color) {
+            const studentGroup = new THREE.Group();
+            
+            const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.8, 4, 8), new THREE.MeshStandardMaterial({color: color, roughness: 0.5}));
+            body.position.y = 0.4;
+            studentGroup.add(body);
+            
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshStandardMaterial({color: 0xffcc99, roughness: 0.5}));
+            head.position.y = 1.1;
+            studentGroup.add(head);
+
+            return studentGroup;
+        }
+
+        function createCattedra(x, y, z, color) {
+            const desk = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.1, 1.2), new THREE.MeshStandardMaterial({color: 0x444444, roughness: 0.5}));
+            desk.position.set(x, 1, z);
+            
+            const legs = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1, 0.1), new THREE.MeshStandardMaterial({color: 0x333333}));
+            legs.position.set(x, 0.5, z - 0.5);
+            
+            worldGroup.add(desk, legs);
+        }
+
+        function createPrincipal(x, y, z, color) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.lookAt(0, 1.6, z + 5); 
+
+            // Corpo Stilizzato
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 1.5, 8), new THREE.MeshPhongMaterial({color: 0x000033})); // Tuta Dirigente
+            body.position.y = 1.2;
+            group.add(body);
+            
+            // Testa Olografica
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshPhongMaterial({color: 0xffccaa}));
+            head.position.y = 2.1;
+            group.add(head);
+            
+            // Aura Olografica
+            const aura = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 3, 32, 1, true), new THREE.MeshBasicMaterial({color: color, transparent: true, opacity: 0.2, side: THREE.DoubleSide}));
+            aura.position.y = 1.5;
+            aura.userData = { scan: true, rotationSpeed: 0.005 };
+            group.add(aura);
+
+            // Click trigger
+            const hit = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshBasicMaterial({visible:false}));
+            hit.position.y = 1;
+            hit.userData = { clickable: true, type: 'preside' };
+            group.add(hit);
+            
+            // Label
+            createText("DIRIGENTE", 0, 2.5, 0, 0.2, 0xffffff, 0, group);
+
+            worldGroup.add(group);
+            return group;
+        }
+
+        function createTeacher(x, y, z, color) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.lookAt(0, 1.6, z + 5);
+
+            // Corpo
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.2, 1.6, 16), new THREE.MeshPhongMaterial({color: color}));
+            body.position.y = 0.8;
+            group.add(body);
+            
+            // Testa
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshPhongMaterial({color: 0xffffff}));
+            head.position.y = 1.7;
+            group.add(head);
+
+            // Label
+            createText("DOCENTE", 0, 2.2, 0, 0.15, 0xffffff, 0, group);
+
+            worldGroup.add(group);
+        }
+
+        // --- CREAZIONE SKYBOX E PARTICELLE ---
+
+        function createStarrySky(color) {
+            const starGeometry = new THREE.BufferGeometry();
+            const starMaterial = new THREE.PointsMaterial({
+                color: color,
+                size: 0.1,
+                sizeAttenuation: true,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                opacity: 0.7
+            });
+
+            const starVertices = [];
+            for (let i = 0; i < 1000; i++) {
+                const x = (Math.random() - 0.5) * 200;
+                const y = (Math.random() - 0.5) * 200;
+                const z = (Math.random() - 0.5) * 200;
+                starVertices.push(x, y, z);
+            }
+            
+            // CORREZIONE CRUCIALE: Usiamo Float32Array e BufferAttribute per correggere il TypeError
+            const positions = new Float32Array(starVertices);
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+        }
+
+        function createShootingStar(color) {
+            const geometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending });
+            shootingStar = new THREE.Mesh(geometry, material);
+            shootingStar.position.set(Math.random() * 50 - 25, Math.random() * 20 + 5, -50);
+            shootingStar.userData = { trail: [], maxTrail: 10, speed: Math.random() * 0.5 + 0.1, color: color };
+            scene.add(shootingStar);
+        }
+
+        function updateShootingStar() {
+            if (!shootingStar) return;
+
+            // Movimento
+            shootingStar.position.x += shootingStar.userData.speed * 0.5;
+            shootingStar.position.y -= shootingStar.userData.speed * 0.5;
+            shootingStar.position.z += shootingStar.userData.speed;
+
+            // Creazione scia
+            const trailGeo = new THREE.SphereGeometry(0.03, 4, 4);
+            const trailMat = new THREE.MeshBasicMaterial({ color: shootingStar.userData.color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+            const trail = new THREE.Mesh(trailGeo, trailMat);
+            trail.position.copy(shootingStar.position);
+            
+            shootingStar.userData.trail.push(trail);
+            worldGroup.add(trail);
+
+            // Rimozione scia vecchia
+            if (shootingStar.userData.trail.length > shootingStar.userData.maxTrail) {
+                const oldTrail = shootingStar.userData.trail.shift();
+                worldGroup.remove(oldTrail);
+            }
+
+            // Reset stella se esce dallo schermo
+            if (shootingStar.position.z > camera.position.z + 5 || shootingStar.position.y < -10) {
+                // Rimuovi la scia residua prima del reset
+                shootingStar.userData.trail.forEach(t => worldGroup.remove(t));
+                shootingStar.userData.trail = [];
+                
+                shootingStar.position.set(
+                    Math.random() * 50 - 25, 
+                    Math.random() * 20 + 10, 
+                    -50 
+                );
+                shootingStar.userData.speed = Math.random() * 0.5 + 0.1;
+            }
+        }
+
+        // --- CREAZIONE PORTALI ---
+
+        function createPortal(label, icon, x, y, z, color, cb) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.lookAt(0, 1.6, 0);
+            
+            // Base a ciambella
+            const frame = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.08, 8, 32), new THREE.MeshBasicMaterial({color: color}));
+            group.add(frame);
+            
+            // Interno cliccabile
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.7, 32, 32), new THREE.MeshBasicMaterial({color: color, transparent:true, opacity: 0.3}));
+            sphere.userData = { clickable: true, action: cb, type: 'portal' };
+            group.add(sphere);
+            interactiveObjects.push(sphere);
+
+            if(loadedFont) {
+                const tGeo = new TextGeometry(`${icon} ${label}`, {font: loadedFont, size: 0.15, height: 0.01});
+                tGeo.center();
+                const tMesh = new THREE.Mesh(tGeo, new THREE.MeshBasicMaterial({color: 0xffffff}));
+                tMesh.position.y = 1.1;
+                group.add(tMesh);
+            }
+            worldGroup.add(group);
+        }
+
+        // --- GESTIONE VIDEO ---
+
+        function toggleVideo(type) {
+            const urlIndex = Object.keys(STUDY_PLANS).findIndex(k => k === type) % VIDEO_URLS.length;
+            videoEl.src = VIDEO_URLS[urlIndex];
+            
+            if (videoEl.paused) {
+                videoEl.play().catch(e => console.error("Errore Play Video:", e));
+            } else {
+                videoEl.pause();
+            }
+        }
+
+        // --- FUNZIONI DI BASE (riutilizzate) ---
+
+        function createTableTexture(data) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 800;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+            ctx.fillRect(0, 0, 1024, 800);
+            ctx.fillStyle = "#000";
+            ctx.font = "bold 40px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(data.title, 512, 60);
+
+            const startX = 50; const startY = 120; const rowHeight = 60;
+            const colWidths = [400, 100, 100, 100, 100, 100]; 
+            ctx.font = "bold 28px Arial";
+            ctx.textAlign = "left";
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#444";
+
+            let currentX = startX;
+            data.headers.forEach((h, i) => {
+                ctx.fillStyle = currentThemeColor;
+                ctx.fillRect(currentX, startY, colWidths[i], rowHeight);
+                ctx.strokeRect(currentX, startY, colWidths[i], rowHeight);
+                ctx.fillStyle = "#fff";
+                ctx.fillText(h, currentX + 10, startY + 38);
+                currentX += colWidths[i];
+            });
+
+            ctx.font = "26px Arial";
+            let currentY = startY + rowHeight;
+            
+            data.rows.forEach((row, rIndex) => {
+                currentX = startX;
+                if(rIndex % 2 === 0) { ctx.fillStyle = "#f9f9f9"; } else { ctx.fillStyle = "#e0e0e0"; }
+                let totalWidth = colWidths.slice(0, row.length).reduce((a,b)=>a+b,0);
+                ctx.fillRect(startX, currentY, totalWidth, rowHeight);
+                
+                if(rIndex === data.rows.length - 1) ctx.font = "bold 26px Arial";
+
+                row.forEach((cell, cIndex) => {
+                    ctx.strokeRect(currentX, currentY, colWidths[cIndex], rowHeight);
+                    ctx.fillStyle = "#000";
+                    ctx.fillText(cell, currentX + 10, currentY + 38);
+                    currentX += colWidths[cIndex];
+                });
+                currentY += rowHeight;
+            });
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createConsole(color) {
+            const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.5), new THREE.MeshPhongMaterial({color: 0x333333, shininess: 30}));
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1, 8), new THREE.MeshPhongMaterial({color: 0x222222}));
+            pole.position.y = -0.5;
+            base.add(pole);
+            
+            const light = new THREE.PointLight(color, 3, 2);
+            light.position.y = 0.2;
+            base.add(light);
+            return base;
+        }
+
+        function createButton(text, x, y, z, color, cb, parent) {
+            const btn = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.3), new THREE.MeshPhongMaterial({color: color, shininess: 50}));
+            btn.position.set(x, y, z);
+            btn.userData = { clickable: true, action: cb, type: 'button' };
+            
+            if(loadedFont) {
+                const tGeo = new TextGeometry(text, {font: loadedFont, size: 0.08, height: 0.01});
+                tGeo.center();
+                const tMesh = new THREE.Mesh(tGeo, new THREE.MeshBasicMaterial({color: 0xffffff}));
+                tMesh.rotation.x = -Math.PI/2;
+                tMesh.position.y = 0.06;
+                btn.add(tMesh);
+            }
+            
+            parent.add(btn);
+            interactiveObjects.push(btn);
+        }
+        
+        function createText(str, x, y, z, size, color, rotY=0, parent=worldGroup) {
+            if(!loadedFont) return;
+            const geo = new TextGeometry(str, { font: loadedFont, size: size, height: 0.02 });
+            geo.center();
+            const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: color }));
+            mesh.position.set(x, y, z);
+            mesh.rotation.y = rotY;
+            parent.add(mesh);
+        }
+        
+        // La folla animata solo nella lobby
+        function createCrowd(count, color) {
+            for(let i=0; i<count; i++) {
+                const person = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 1, 4, 8), new THREE.MeshBasicMaterial({color: color, transparent: true, opacity: 0.3}));
+                person.position.set(
+                    (Math.random() * 8) - 4,
+                    0.7,                            
+                    (Math.random() * 20) - 25       
+                );
+                
+                person.userData = { 
+                    walk: true, 
+                    speed: (Math.random() * 0.02) + 0.01, 
+                    dir: Math.random() > 0.5 ? 1 : -1 
+                };
+                
+                worldGroup.add(person);
+                crowd.push(person);
+            }
+        }
+
+        function speak(text, meshToAnimate) {
+            if (!window.speechSynthesis) return;
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'it-IT';
+            u.pitch = 1.0; 
+            u.rate = 0.9;  
+            
+            u.onstart = () => { isSpeaking = true; if(meshToAnimate) meshToAnimate.material.color.setHex(0xffff00); };
+            u.onend = () => { isSpeaking = false; if(meshToAnimate) meshToAnimate.material.color.setHex(0xffccaa); };
+            
+            window.speechSynthesis.speak(u);
+        }
+
+        // --- LOOP E INTERAZIONI ---
+
+        function onSelectVR(event) {
+            const controller = event.target;
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            checkHits();
+        }
+
+        function onClick(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            checkHits();
+        }
+
+        function checkHits() {
+            const intersects = raycaster.intersectObjects(interactiveObjects, true);
+            if (intersects.length > 0) {
+                let target = intersects[0].object;
+                while(!target.userData.clickable && target.parent) target = target.parent;
+                
+                if (target.userData.action) {
+                    if (target.userData.type === 'logo' || target.userData.type === 'preside') {
+                        target.userData.action();
+                    } else if (target.userData.type === 'portal' || target.userData.type === 'button') {
+                        // Animazione click visuale (solo per feedback tattile)
+                        target.scale.set(1.1, 1.1, 1.1);
+                        setTimeout(() => target.scale.set(1, 1, 1), 100);
+                        target.userData.action();
+                    }
+                }
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function render() {
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+            controls.update();
+
+            // Animazione Folla (solo nella lobby)
+            crowd.forEach(p => {
+                p.position.z += p.userData.speed * p.userData.dir;
+                if(p.position.z > 5 || p.position.z < -28) p.userData.dir *= -1;
+            });
+            
+            // Animazione Aura/Ologramma
+            worldGroup.children.forEach(child => {
+                if(child.userData.scan) {
+                    child.rotation.y += child.userData.rotationSpeed || 0.01;
+                }
+                child.children.forEach(sub => {
+                    if(sub.userData.scan) sub.rotation.y += sub.userData.rotationSpeed || 0.01;
+                });
+            });
+            
+            // Animazione Logo ITCS Olografico
+            if(logo3D) {
+                logo3D.rotation.y += delta * 0.5;
+                logo3D.rotation.x = Math.sin(time) * 0.1;
+            }
+
+            // Animazione Stelle Cadenti
+            updateShootingStar();
+
+            renderer.render(scene, camera);
+        }
+
+    </script>
+</body>
+</html>
