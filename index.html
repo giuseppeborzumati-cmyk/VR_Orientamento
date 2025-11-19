@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dream wilders VR School - Direct</title>
+    <style>
+        /* Stili Globali */
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        
+        /* HUD Minimale (Sovraimpresso al 3D) */
+        #hud {
+            position: absolute; bottom: 20px; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.8); font-size: 16px; pointer-events: none;
+            text-shadow: 0 2px 4px black; z-index: 10; font-weight: bold; letter-spacing: 1px;
+        }
+
+        /* Overlay "Tocca per Entrare" (Solo per VR) */
+        #vr-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; /* Nascosto di default */
+            align-items: center; justify-content: center; flex-direction: column;
+            background: rgba(0,0,0,0.3); cursor: pointer; z-index: 20;
+            transition: opacity 0.5s;
+        }
+        
+        .vr-msg {
+            font-size: 2rem; color: #00ff88; font-weight: bold; 
+            text-shadow: 0 0 20px #00ff88; text-transform: uppercase;
+            animation: pulse 1.5s infinite;
+            background: rgba(0,0,0,0.6); padding: 20px 40px; border-radius: 50px;
+            border: 2px solid #00ff88;
+        }
+
+        @keyframes pulse { 0% {transform: scale(1);} 50% {transform: scale(1.05);} 100% {transform: scale(1);} }
+        
+        /* Info Panel per oggetti cliccati */
+        #info-toast {
+            position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 20, 40, 0.9); border: 1px solid #00d2ff; color: white;
+            padding: 15px 30px; border-radius: 8px; display: none; text-align: center;
+            box-shadow: 0 0 30px rgba(0, 210, 255, 0.4); pointer-events: none;
+        }
+        
+        #video-source { display: none; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <video id="video-source" loop crossOrigin="anonymous" playsinline muted style="display:none">
+        <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+    </video>
+
+    <!-- OVERLAY INVISIBILE CHE DIVENTA VISIBILE SOLO SE C'È IL VISORE -->
+    <div id="vr-overlay">
+        <div class="vr-msg">TOCCA PER ENTRARE IN VR</div>
+        <div style="color: white; margin-top: 10px; font-size: 1rem;">Visore Android Rilevato</div>
+    </div>
+
+    <!-- LOGO E TITOLO (FLUTTUANTI NEL 3D, MA QUI PER DEBUG) -->
+    <div id="info-toast"></div>
+
+    <div id="hud">Esplora guardandoti intorno</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+
+        // --- CONFIGURAZIONE ---
+        const STUDY_PLANS = {
+            science: { title: "SCIENZE APPLICATE", color: 0x00ff88 },
+            cat: { title: "COSTRUZIONI (C.A.T.)", color: 0xffaa00 },
+            moda: { title: "SISTEMA MODA", color: 0xff00cc },
+            rim: { title: "RELAZIONI INTERNAZIONALI", color: 0x0088ff },
+            logistica: { title: "LOGISTICA", color: 0xffff00 }
+        };
+        
+        const VIDEO_URLS = {
+            science: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", 
+            moda:    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            cat:     "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            rim:     "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            logistica:"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4"
+        };
+
+        const PRINCIPAL_MSG = "Benvenuti all'ITCS Primo Levi. Il futuro è qui.";
+        
+        // --- VARIABILI ---
+        let scene, camera, renderer, controls, raycaster;
+        const pointer = new THREE.Vector2();
+        let interactiveObjects = [];
+        let crowd = []; 
+        let planets = []; 
+        let worldGroup = new THREE.Group();
+        let loadedFont = null;
+        let videoEl, videoTexture;
+        let clock = new THREE.Clock();
+        let isSpeaking = false;
+        let stars, shootingStar;
+        let logo3D;
+        let playerHands = new THREE.Group(); 
+
+        // AVVIO IMMEDIATO
+        init();
+
+        function init() {
+            // SCENA
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050510);
+            scene.fog = new THREE.FogExp2(0x050510, 0.015);
+            scene.add(worldGroup);
+
+            // CAMERA
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.7, 0); // Altezza occhi
+            
+            createPlayerHands();
+            scene.add(camera); 
+
+            // RENDERER
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true; // Abilita XR per quando si attiverà
+            renderer.xr.setReferenceSpaceType('local-floor');
+            document.body.appendChild(renderer.domElement);
+
+            // CONTROLLI (Orbit per Desktop/Mobile, XR per Visore)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 1.7, -2);
+            controls.enableDamping = true;
+
+            // LUCI
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(0, 10, 5);
+            scene.add(dirLight);
+
+            // RAYCASTER
+            raycaster = new THREE.Raycaster();
+            videoEl = document.getElementById('video-source');
+            videoTexture = new THREE.VideoTexture(videoEl);
+
+            // CARICAMENTO ASSET E COSTRUZIONE MONDO IMMEDIATA
+            const loader = new FontLoader();
+            loader.load('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json', function (font) {
+                loadedFont = font;
+                buildLobby(); // Costruisci subito il mondo!
+            });
+
+            // EVENTI
+            window.addEventListener('resize', onWindowResize);
+            // Click generico per interagire
+            document.addEventListener('click', onClick); 
+            document.addEventListener('touchstart', onClick);
+            // Select del controller VR
+            renderer.xr.addEventListener('select', onSelectVR);
+            
+            renderer.setAnimationLoop(render);
+
+            // RILEVAMENTO VISORE "SILENZIOSO"
+            setupSilentVRDetection();
+        }
+
+        function setupSilentVRDetection() {
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    if (supported) {
+                        // SE IL VISORE E' PRONTO:
+                        // Mostra l'overlay "Tocca per entrare" che copre tutto
+                        const overlay = document.getElementById('vr-overlay');
+                        overlay.style.display = 'flex';
+                        
+                        // Al tocco, entra in VR
+                        overlay.addEventListener('click', async () => {
+                            try {
+                                const session = await navigator.xr.requestSession('immersive-vr', {
+                                    optionalFeatures: ['local-floor', 'bounded-floor']
+                                });
+                                renderer.xr.setSession(session);
+                                overlay.style.display = 'none'; // Nascondi overlay
+                            } catch(e) {
+                                console.error("Impossibile avviare VR", e);
+                            }
+                        });
+                    }
+                    // Se NON supportato (PC normale), non fare nulla, l'utente vede il 3D e naviga col mouse.
+                });
+            }
+        }
+
+        function createPlayerHands() {
+            // Mani/Controller stilizzati
+            const handGeo = new THREE.BoxGeometry(0.08, 0.08, 0.15);
+            const handMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            
+            const leftHand = new THREE.Mesh(handGeo, handMat);
+            leftHand.position.set(-0.2, -0.3, -0.5);
+            camera.add(leftHand);
+            
+            const rightHand = new THREE.Mesh(handGeo, handMat);
+            rightHand.position.set(0.2, -0.3, -0.5);
+            camera.add(rightHand);
+        }
+
+        // --- COSTRUZIONE MONDO (LOBBY) ---
+        function buildLobby() {
+            // Pulisci se necessario
+            while(worldGroup.children.length > 0){ worldGroup.remove(worldGroup.children[0]); }
+            interactiveObjects = [];
+            crowd = [];
+            planets = [];
+
+            // Ambiente
+            createEnvironment();
+            createStarrySky(0xffffff);
+            createShootingStar(0x00d2ff);
+
+            // Logo ITCS Gigante
+            logo3D = createITCSLogo3D(0xffffff);
+            if(logo3D) {
+                logo3D.position.set(0, 4, -12);
+                logo3D.scale.set(2, 2, 2);
+                worldGroup.add(logo3D);
+            }
+
+            // Portali Indirizzi
+            const keys = Object.keys(STUDY_PLANS);
+            keys.forEach((key, i) => {
+                const plan = STUDY_PLANS[key];
+                // Disposizione a semicerchio
+                const angle = (i / (keys.length - 1)) * Math.PI - Math.PI/2;
+                const x = Math.sin(angle) * 7;
+                const z = Math.cos(angle) * 7 - 7;
+                
+                createPortal(plan.title, x, 1.5, z, plan.color, () => buildClassroom(key));
+                
+                if(key === 'rim') createSolarSystem(x, 4, z - 2);
+            });
+
+            // Studenti
+            createCrowd(10);
+
+            // Dirigente
+            createAvatar(0, 0, -6, 0x000055, "DIRIGENTE", () => showToast(PRINCIPAL_MSG));
+        }
+
+        function createEnvironment() {
+            // Pavimento
+            const floorGeo = new THREE.PlaneGeometry(60, 60);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.5 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            worldGroup.add(floor);
+
+            const grid = new THREE.GridHelper(60, 60, 0x00d2ff, 0x050510);
+            grid.position.y = 0.01;
+            worldGroup.add(grid);
+
+            // Muri laterali aperti
+            const wallGeo = new THREE.BoxGeometry(1, 8, 60);
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const wallL = new THREE.Mesh(wallGeo, wallMat); wallL.position.set(-20, 4, 0);
+            const wallR = new THREE.Mesh(wallGeo, wallMat); wallR.position.set(20, 4, 0);
+            worldGroup.add(wallL); worldGroup.add(wallR);
+        }
+
+        function buildClassroom(type) {
+            // Semplice switch stanza
+            while(worldGroup.children.length > 0){ worldGroup.remove(worldGroup.children[0]); }
+            interactiveObjects = [];
+            
+            const data = STUDY_PLANS[type];
+            scene.background = new THREE.Color(0x111111);
+            
+            // Stanza
+            const room = new THREE.Mesh(new THREE.BoxGeometry(20, 10, 20), new THREE.MeshStandardMaterial({color: 0x333333, side: THREE.BackSide}));
+            room.position.y = 5;
+            worldGroup.add(room);
+            
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({color: 0x555555}));
+            floor.rotation.x = -Math.PI/2;
+            floor.position.y = 0.01;
+            worldGroup.add(floor);
+
+            createAvatar(0, 0, -8, data.color, "DOCENTE", () => showToast("Corso: " + data.title));
+
+            // Banchi
+            for(let x=-1; x<=1; x+=2) {
+                for(let z=-1; z<=1; z++) {
+                    const desk = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1), new THREE.MeshStandardMaterial({color:0x654321}));
+                    desk.position.set(x*4, 0.5, z*3);
+                    worldGroup.add(desk);
+                }
+            }
+
+            // Schermo
+            const screen = new THREE.Mesh(new THREE.PlaneGeometry(8, 4.5), new THREE.MeshBasicMaterial({map: videoTexture}));
+            screen.position.set(0, 3.5, -9.9);
+            worldGroup.add(screen);
+            if(VIDEO_URLS[type]) { videoEl.src = VIDEO_URLS[type]; videoEl.play().catch(()=>{}); }
+
+            createButton("INDIETRO", 0, 1, 8, 0xff0000, buildLobby);
+        }
+
+        // --- OGGETTI 3D ---
+
+        function createPortal(label, x, y, z, color, cb) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.lookAt(0, 1.7, 0);
+
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.1, 8, 32), new THREE.MeshBasicMaterial({color: color, emissive: color, emissiveIntensity: 0.5}));
+            ring.position.y = 1.5;
+            group.add(ring);
+
+            // Area cliccabile invisibile
+            const hit = new THREE.Mesh(new THREE.CircleGeometry(1.2, 32), new THREE.MeshBasicMaterial({visible: false}));
+            hit.position.y = 1.5;
+            hit.userData = { clickable: true, action: cb };
+            group.add(hit);
+            interactiveObjects.push(hit);
+
+            if(loadedFont) createText(label, 0, 3, 0, 0.2, 0xffffff, 0, group);
+            worldGroup.add(group);
+        }
+
+        function createAvatar(x, y, z, color, label, action) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.lookAt(0, 1.7, 5);
+
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.6, 16), new THREE.MeshStandardMaterial({color: color}));
+            body.position.y = 0.8;
+            group.add(body);
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.25), new THREE.MeshStandardMaterial({color: 0xffccaa}));
+            head.position.y = 1.7;
+            group.add(head);
+
+            const hit = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), new THREE.MeshBasicMaterial({visible: false}));
+            hit.position.y = 1;
+            hit.userData = { clickable: true, action: action };
+            group.add(hit);
+            interactiveObjects.push(hit);
+
+            if(loadedFont) createText(label, 0, 2.2, 0, 0.15, 0xffffff, 0, group);
+            worldGroup.add(group);
+            return group;
+        }
+
+        function createCrowd(count) {
+            for(let i=0; i<count; i++) {
+                const student = createAvatar((Math.random()-0.5)*15, 0, (Math.random()-0.5)*30, Math.random()*0xffffff, "", null);
+                student.userData = { walking: true, speed: 0.03 + Math.random()*0.02, dir: Math.random()>0.5 ? 1 : -1 };
+                crowd.push(student);
+            }
+        }
+
+        function createSolarSystem(x, y, z) {
+            const g = new THREE.Group(); g.position.set(x,y,z);
+            const sun = new THREE.Mesh(new THREE.SphereGeometry(0.6,32,32), new THREE.MeshBasicMaterial({color: 0xffff00}));
+            sun.userData = { clickable:true, action:()=>showToast("Pianeta RIM") };
+            g.add(sun); interactiveObjects.push(sun);
+            worldGroup.add(g); planets.push(g);
+        }
+
+        function createITCSLogo3D(color) {
+            const g = new THREE.Group();
+            const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1,0), new THREE.MeshStandardMaterial({color:color, wireframe:true}));
+            g.add(mesh);
+            if(loadedFont) createText("ITCS", 0, 0, 0.5, 0.4, color, 0, g);
+            return g;
+        }
+
+        function createButton(text, x, y, z, color, cb) {
+            const btn = new THREE.Mesh(new THREE.BoxGeometry(1, 0.4, 0.1), new THREE.MeshStandardMaterial({color: color}));
+            btn.position.set(x, y, z);
+            btn.userData = { clickable: true, action: cb };
+            interactiveObjects.push(btn);
+            worldGroup.add(btn);
+            if(loadedFont) createText(text, x, y, z+0.1, 0.1, 0xffffff, 0, worldGroup);
+        }
+
+        function createText(str, x, y, z, size, color, rotY, parent) {
+            const geo = new TextGeometry(str, { font: loadedFont, size: size, height: 0.02 });
+            geo.center();
+            const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: color }));
+            mesh.position.set(x, y, z);
+            mesh.rotation.y = rotY;
+            parent.add(mesh);
+        }
+
+        function createStarrySky(color) {
+            const geo = new THREE.BufferGeometry();
+            const pos = [];
+            for(let i=0; i<2000; i++) pos.push((Math.random()-0.5)*300, (Math.random()-0.5)*300, (Math.random()-0.5)*300);
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            stars = new THREE.Points(geo, new THREE.PointsMaterial({color: color, size: 0.5}));
+            scene.add(stars);
+        }
+
+        function createShootingStar(color) {
+            shootingStar = new THREE.Mesh(new THREE.SphereGeometry(0.2), new THREE.MeshBasicMaterial({color: color}));
+            scene.add(shootingStar);
+        }
+
+        // --- INTERAZIONI ---
+        function showToast(msg) {
+            const el = document.getElementById('info-toast');
+            el.innerText = msg;
+            el.style.display = 'block';
+            setTimeout(()=>el.style.display='none', 3000);
+            // Voce sintetica opzionale
+            if(window.speechSynthesis) {
+                const u = new SpeechSynthesisUtterance(msg);
+                u.lang = 'it-IT';
+                window.speechSynthesis.speak(u);
+            }
+        }
+
+        function onSelectVR(event) { checkHits(); }
+        function onClick(event) {
+            // Se clicca overlay, non fare raycast
+            if(event.target.id === 'vr-overlay' || event.target.className === 'vr-msg') return;
+
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            checkHits();
+        }
+        
+        function checkHits() {
+            const intersects = raycaster.intersectObjects(interactiveObjects, true);
+            if(intersects.length > 0) {
+                let obj = intersects[0].object;
+                while(obj && !obj.userData.clickable) obj = obj.parent;
+                if(obj && obj.userData.action) obj.userData.action();
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function render() {
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+            controls.update();
+
+            crowd.forEach(s => {
+                if(s.userData.walking) {
+                    s.position.z += s.userData.speed * s.userData.dir;
+                    if(s.position.z > 10 || s.position.z < -30) {
+                        s.userData.dir *= -1;
+                        s.rotation.y += Math.PI;
+                    }
+                }
+            });
+
+            if(logo3D) {
+                logo3D.rotation.y += delta * 0.5;
+                logo3D.rotation.x = Math.sin(time) * 0.1;
+            }
+
+            if(shootingStar) {
+                shootingStar.position.x = Math.sin(time * 2) * 20;
+                shootingStar.position.y = 10 + Math.cos(time * 2) * 5;
+                shootingStar.position.z = -20 + Math.cos(time) * 10;
+            }
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
